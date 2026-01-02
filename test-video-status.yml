@@ -1,0 +1,116 @@
+id: test-video-status
+namespace: company.team
+description: Workflow de teste para verificar status e baixar vídeo já pronto
+
+variables:
+  mcp_server_url: "https://projeto-1-mcp-shorts-generator-tiny.2eisou.easypanel.host"
+  # SUBSTITUA pelo videoId que você quer testar (um que já esteja pronto)
+  test_video_id: "cmjxaj0hg000m0kqqetmy0zvy"
+  max_wait_attempts: 5
+  wait_interval: PT10S  # 10 segundos para teste rápido
+
+tasks:
+  - id: check_and_download_video
+    type: io.kestra.plugin.scripts.python.Script
+    description: Verifica status e baixa vídeo de teste
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.11-slim
+    beforeCommands:
+      - pip install kestra requests
+    script: |
+      import requests
+      import time
+      import json
+      from kestra import Kestra
+      
+      mcp_server_url = "{{ vars.mcp_server_url }}"
+      video_id = "{{ vars.test_video_id }}"
+      max_attempts = {{ vars.max_wait_attempts }}
+      wait_seconds = 10  # 10 segundos
+      
+      print(f"🎬 Testando verificação de status para vídeo: {video_id}")
+      print(f"📡 Servidor MCP: {mcp_server_url}")
+      print("=" * 60)
+      
+      for attempt in range(max_attempts):
+          try:
+              # Verifica o status
+              status_url = f"{mcp_server_url}/api/short-video/{video_id}/status"
+              response = requests.get(status_url)
+              
+              print(f"\n📡 Tentativa {attempt + 1}/{max_attempts}")
+              print(f"   URL: {status_url}")
+              print(f"   Status Code: {response.status_code}")
+              
+              if response.status_code == 200:
+                  status_data = response.json()
+                  print(f"   Resposta completa: {json.dumps(status_data, indent=2)}")
+                  
+                  video_status = status_data.get('status', 'unknown')
+                  
+                  # Normaliza status para lowercase para comparação case-insensitive
+                  video_status_lower = str(video_status).lower()
+                  
+                  print(f"   Status do vídeo: {video_status}")
+                  
+                  if video_status_lower == 'ready':
+                      print("\n✓ Vídeo pronto! Baixando...")
+                      
+                      # Baixa o vídeo
+                      video_url = f"{mcp_server_url}/api/short-video/{video_id}"
+                      print(f"   URL de download: {video_url}")
+                      
+                      video_response = requests.get(video_url)
+                      
+                      if video_response.status_code == 200:
+                          # Salva o vídeo
+                          with open('video.mp4', 'wb') as f:
+                              f.write(video_response.content)
+                          
+                          file_size_mb = len(video_response.content) / (1024 * 1024)
+                          print(f"\n✓✓ SUCESSO! Vídeo baixado!")
+                          print(f"   Tamanho: {file_size_mb:.2f} MB ({len(video_response.content)} bytes)")
+                          
+                          Kestra.outputs({
+                              'status': 'ready',
+                              'video_file': 'video.mp4',
+                              'download_success': 'true',
+                              'file_size_bytes': len(video_response.content)
+                          })
+                          break
+                      else:
+                          raise Exception(f"Erro ao baixar vídeo: {video_response.status_code}")
+                  
+                  elif video_status_lower == 'failed' or video_status_lower == 'error':
+                      error_msg = status_data.get('error', status_data.get('message', 'Unknown error'))
+                      raise Exception(f"Vídeo falhou no processamento: {error_msg}")
+                  
+                  else:
+                      # Aguarda antes da próxima verificação
+                      print(f"   ⏳ Status ainda não pronto: {video_status}")
+                      if attempt < max_attempts - 1:
+                          print(f"   Aguardando {wait_seconds} segundos...")
+                          time.sleep(wait_seconds)
+              else:
+                  print(f"   ✗ Erro ao verificar status: {response.status_code}")
+                  print(f"   Resposta: {response.text[:200]}")
+                  if attempt < max_attempts - 1:
+                      time.sleep(wait_seconds)
+          
+          except Exception as e:
+              print(f"\n✗ Erro na tentativa {attempt + 1}: {str(e)}")
+              if attempt < max_attempts - 1:
+                  print(f"   Aguardando {wait_seconds} segundos...")
+                  time.sleep(wait_seconds)
+              else:
+                  raise
+      
+      else:
+          raise Exception(f"Timeout: vídeo não ficou pronto após {max_attempts} tentativas")
+
+triggers:
+  - id: manual_test
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 0 31 2 *"  # Nunca executa automaticamente
+    disabled: true

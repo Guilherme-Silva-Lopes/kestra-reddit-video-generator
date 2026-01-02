@@ -1,0 +1,76 @@
+id: reddit-video-generator
+namespace: company.team
+description: Workflow automatizado para gerar vídeos do Reddit com IA
+
+variables:
+  reddit_feed_url: "https://www.reddit.com/r/stories/top/.rss?t=week"
+  github_repo: "https://github.com/SEU_USUARIO/kestra-reddit-video-generator.git"
+  github_branch: "main"
+  max_wait_attempts: 30
+  wait_interval: PT2M
+
+tasks:
+  - id: clone_repository
+    type: io.kestra.plugin.git.Clone
+    description: Clona o repositório GitHub com os scripts Python
+    url: "{{ vars.github_repo }}"
+    branch: "{{ vars.github_branch }}"
+
+  - id: fetch_reddit_feed
+    type: io.kestra.plugin.core.http.Request
+    description: Busca o feed RSS do Reddit
+    uri: "{{ vars.reddit_feed_url }}"
+    headers:
+      User-Agent: "Kestra/1.0"
+
+  - id: parse_and_process_feed
+    type: io.kestra.plugin.scripts.python.Script
+    description: Processa o feed RSS e extrai informações dos posts
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.11-slim
+    beforeCommands:
+      - pip install -r {{ outputs.clone_repository.directory }}/requirements.txt
+    inputFiles:
+      feed_xml.xml: "{{ outputs.fetch_reddit_feed.body }}"
+    script: "{{ read(outputs.clone_repository.directory + '/scripts/parse_reddit_feed.py') }}"
+    env:
+      FEED_XML_PATH: "{{ workingDir }}/feed_xml.xml"
+
+  - id: generate_video_with_ai
+    type: io.kestra.plugin.scripts.python.Script
+    description: Gera vídeo usando agentes AI (Gemini + GPT fallback) e MCP
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.11-slim
+    beforeCommands:
+      - pip install -r {{ outputs.clone_repository.directory }}/requirements.txt
+    script: "{{ read(outputs.clone_repository.directory + '/scripts/generate_video_with_ai.py') }}"
+    env:
+      GOOGLE_API_KEY: "{{ kv('GOOGLE_API_KEY') }}"
+      OPENAI_API_KEY: "{{ kv('OPENAI_API_KEY') }}"
+      MCP_SERVER_URL: "{{ kv('SHORTS_GENERATOR_MCP') }}"
+      POST_TITLE: "{{ outputs.parse_and_process_feed.vars.post_title }}"
+      POST_CONTENT: "{{ outputs.parse_and_process_feed.vars.post_content }}"
+
+  - id: wait_and_check_status
+    type: io.kestra.plugin.scripts.python.Script
+    description: Aguarda e verifica o status do vídeo em loop até ficar pronto
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+    containerImage: python:3.11-slim
+    beforeCommands:
+      - pip install -r {{ outputs.clone_repository.directory }}/requirements.txt
+    script: "{{ read(outputs.clone_repository.directory + '/scripts/wait_and_download_video.py') }}"
+    env:
+      MCP_SERVER_URL: "{{ kv('SHORTS_GENERATOR_MCP') }}"
+      VIDEO_ID: "{{ outputs.generate_video_with_ai.vars.videoId }}"
+      MAX_WAIT_ATTEMPTS: "{{ vars.max_wait_attempts }}"
+    outputFiles:
+      - video.mp4
+
+triggers:
+  - id: manual_trigger
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 0 31 2 *"  # Nunca executa (31 de fevereiro não existe)
+    disabled: true
