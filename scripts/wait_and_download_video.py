@@ -10,9 +10,12 @@ from kestra import Kestra
 
 def main():
     mcp_server_url = os.getenv('MCP_SERVER_URL')
-    video_id = """{{ outputs.generate_video_with_ai.vars.videoId }}"""
+    video_id = os.getenv('VIDEO_ID')
     max_attempts = int(os.getenv('MAX_WAIT_ATTEMPTS', '30'))
     wait_seconds = 120  # 2 minutos
+    
+    if not all([mcp_server_url, video_id]):
+        raise Exception("Missing required environment variables: MCP_SERVER_URL or VIDEO_ID")
     
     print(f"Verificando status do vídeo {video_id}...")
     

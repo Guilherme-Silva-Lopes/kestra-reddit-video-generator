@@ -31,11 +31,9 @@ tasks:
     containerImage: python:3.11-slim
     beforeCommands:
       - pip install -r {{ outputs.clone_repository.directory }}/requirements.txt
-    inputFiles:
-      feed_xml.xml: "{{ outputs.fetch_reddit_feed.body }}"
     script: "{{ read(outputs.clone_repository.directory + '/scripts/parse_reddit_feed.py') }}"
     env:
-      FEED_XML_PATH: "{{ workingDir }}/feed_xml.xml"
+      FEED_XML_CONTENT: "{{ outputs.fetch_reddit_feed.body }}"
 
   - id: generate_video_with_ai
     type: io.kestra.plugin.scripts.python.Script

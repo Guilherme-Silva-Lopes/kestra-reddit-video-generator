@@ -3,12 +3,16 @@ Parse Reddit RSS feed and extract post information
 """
 import xmltodict
 import json
+import os
 from kestra import Kestra
 
 
 def main():
-    # Obtém o conteúdo XML do feed
-    xml_content = """{{ outputs.fetch_reddit_feed.body }}"""
+    # Obtém o conteúdo XML do feed via variável de ambiente
+    xml_content = os.getenv('FEED_XML_CONTENT')
+    
+    if not xml_content:
+        raise Exception("FEED_XML_CONTENT environment variable not set")
     
     # Converte XML para dicionário Python
     feed_dict = xmltodict.parse(xml_content)

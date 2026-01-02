@@ -12,13 +12,15 @@ from langchain_core.tools import tool
 
 
 def main():
-    # Obtém as credenciais e dados
+    # Obtém as credenciais e dados via variáveis de ambiente
     google_api_key = os.getenv('GOOGLE_API_KEY')
     openai_api_key = os.getenv('OPENAI_API_KEY')
     mcp_server_url = os.getenv('MCP_SERVER_URL')
+    post_title = os.getenv('POST_TITLE')
+    post_content = os.getenv('POST_CONTENT')
     
-    post_title = """{{ outputs.parse_and_process_feed.vars.post_title }}"""
-    post_content = """{{ outputs.parse_and_process_feed.vars.post_content }}"""
+    if not all([google_api_key, openai_api_key, mcp_server_url, post_title, post_content]):
+        raise Exception("Missing required environment variables")
     
     # Define a tool MCP para criar vídeo
     @tool
