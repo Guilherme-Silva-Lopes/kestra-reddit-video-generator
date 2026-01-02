@@ -155,61 +155,49 @@ def main():
         except Exception as e2:
             raise Exception(f"Ambos os modelos falharam. Gemini: {e}, GPT: {e2}")
     
-    # Extrai informações do resultado do agente
+    # Extrai videoId do resultado do agente
     # O agente já chamou a tool create_short_video internamente
     messages = agent_result.get("messages", [])
     
-    # Procura por tool calls nos resultados
     video_id = "unknown"
+    video_data = {}
+    
+    # Procura pela resposta da tool nos resultados
     for msg in messages:
+        # Verifica se é uma mensagem de resposta de tool
+        if hasattr(msg, 'content') and isinstance(msg.content, str):
+            try:
+                # Tenta fazer parse se for JSON
+                content_json = json.loads(msg.content)
+                if 'videoId' in content_json:
+                    video_data = content_json
+                    video_id = content_json['videoId']
+                    print(f"✓ VideoId extraído do agente: {video_id}")
+                    break
+            except:
+                pass
+        
+        # Também verifica tool_calls para extrair argumentos
         if hasattr(msg, 'tool_calls') and msg.tool_calls:
-            # Pega o resultado da primeira tool call
-            tool_result = msg.tool_calls[0]
-            print(f"📊 Tool result: {tool_result}")
+            for tool_call in msg.tool_calls:
+                if hasattr(tool_call, 'args') and 'videoId' in str(tool_call.args):
+                    print(f"📊 Tool call encontrado: {tool_call}")
     
-    # Como alternativa, podemos fazer uma chamada direta à API MCP
-    # se o agente não retornar o videoId claramente
-    print("📡 Chamando API MCP para garantir criação do vídeo...")
-    mcp_url = f"{mcp_server_url}/api/short-video"
+    # Se não conseguiu extrair do agente, busca via API de status
+    if video_id == "unknown":
+        print("⚠️ Não foi possível extrair videoId do agente diretamente")
+        print("💡 Você precisará verificar os logs do MCP para obter o videoId")
+        raise Exception("VideoId não encontrado no resultado do agente. Verifique os logs.")
     
-    video_payload = {
-        "scenes": [
-            {
-                "text": post_content,
-                "duration": 10,
-                "searchTerms": [post_title]
-            }
-        ],
-        "config": {
-            "title": post_title,
-            "voice": "af_nova",
-            "backgroundMusic": True,
-            "subtitles": True
-        }
-    }
+    print(f"✓ Vídeo criado! ID: {video_id}")
     
-    video_response = requests.post(
-        mcp_url,
-        json=video_payload,
-        headers={"Content-Type": "application/json"},
-        timeout=30
-    )
-    
-    if video_response.status_code in [200, 201]:
-        video_result = video_response.json()
-        video_id = video_result.get('videoId', video_result.get('id', 'unknown'))
-        
-        print(f"✓ Vídeo final criado! ID: {video_id}")
-        
-        Kestra.outputs({
-            'videoId': video_id,
-            'videoTitle': post_title,
-            'model_used': model_used,
-            'video_data': json.dumps(video_result),
-            'agent_result': str(agent_result)[:500]
-        })
-    else:
-        raise Exception(f"Erro ao criar vídeo: {video_response.status_code} - {video_response.text}")
+    Kestra.outputs({
+        'videoId': video_id,
+        'videoTitle': post_title,
+        'model_used': model_used,
+        'video_data': json.dumps(video_data) if video_data else '{}',
+        'agent_result': str(agent_result)[:500]
+    })
 
 
 if __name__ == '__main__':
